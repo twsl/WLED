@@ -1,0 +1,30 @@
+{
+  "name": "Zigbee Usermod",
+  "description": "WLED Zigbee control using ESP-Zigbee-SDK for ESP32-C6",
+  "version": "1.0.0",
+  "authors": [
+    {
+      "name": "WLED Community"
+    }
+  ],
+  "keywords": [
+    "zigbee",
+    "esp32",
+    "esp32c6",
+    "wled",
+    "iot",
+    "lighting"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Aircoookie/WLED.git"
+  },
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"],
+  "dependencies": [
+    {
+      "name": "esp-zigbee-lib",
+      "platforms": ["espressif32"]
+    }
+  ]
+}
