@@ -21,10 +21,8 @@
   },
   "frameworks": ["arduino"],
   "platforms": ["espressif32"],
-  "dependencies": [
-    {
-      "name": "esp-zigbee-lib",
-      "platforms": ["espressif32"]
-    }
-  ]
+  "build": {
+    "libArchive": false
+  },
+  "dependencies": []
 }

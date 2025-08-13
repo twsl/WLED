@@ -17,26 +17,18 @@
  */
 
 #ifdef ESP32
-#if CONFIG_IDF_TARGET_ESP32C6
+#if defined(CONFIG_IDF_TARGET_ESP32C6) && defined(CONFIG_ZB_ENABLED)
 
-// Include ESP-Zigbee-SDK headers
+// Include ESP-Zigbee-SDK headers (available in ESP-IDF 5.x for ESP32-C6)
 #include "esp_zigbee_core.h"
 #include "esp_zigbee_cluster.h"
 #include "esp_zigbee_attribute.h"
-#include "zcl/esp_zigbee_zcl_on_off.h"
-#include "zcl/esp_zigbee_zcl_level_control.h"
-#include "zcl/esp_zigbee_zcl_color_control.h"
 
 // Zigbee definitions
 #define ZIGBEE_ENDPOINT_ID 1
 #define ZIGBEE_DEVICE_ID ESP_ZB_HA_DIMMABLE_LIGHT_DEVICE_ID
 #define ZIGBEE_DEVICE_VERSION 1
 #define ZIGBEE_POWER_SOURCE ESP_ZB_ZED_POWER_SOURCE_BATTERY
-
-// Zigbee cluster definitions
-#define ZIGBEE_ON_OFF_CLUSTER_ID ESP_ZB_ZCL_CLUSTER_ID_ON_OFF
-#define ZIGBEE_LEVEL_CONTROL_CLUSTER_ID ESP_ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL
-#define ZIGBEE_COLOR_CONTROL_CLUSTER_ID ESP_ZB_ZCL_CLUSTER_ID_COLOR_CONTROL
 
 class ZigbeeUsermod : public Usermod {
 private:
@@ -107,13 +99,19 @@ void ZigbeeUsermod::setup() {
     // Store global instance for callbacks
     zigbeeInstance = this;
     
+    Serial.println(F("Zigbee Usermod: ESP32-C6 with Zigbee support detected"));
+    
     // Initialize ESP-Zigbee-SDK
     esp_zb_platform_config_t config = {
         .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
         .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
     };
     
-    ESP_ERROR_CHECK(esp_zb_platform_config(&config));
+    esp_err_t err = esp_zb_platform_config(&config);
+    if (err != ESP_OK) {
+        Serial.printf("Zigbee Usermod: Platform config failed: %s\n", esp_err_to_name(err));
+        return;
+    }
     
     // Create Zigbee device
     if (createZigbeeDevice() == ESP_OK) {
@@ -121,12 +119,15 @@ void ZigbeeUsermod::setup() {
         esp_zb_core_action_handler_register(zigbeeActionHandler);
         
         // Start Zigbee stack
-        ESP_ERROR_CHECK(esp_zb_start(false));
-        zigbeeStarted = true;
-        
-        Serial.println(F("Zigbee Usermod: Initialized successfully"));
+        err = esp_zb_start(false);
+        if (err == ESP_OK) {
+            zigbeeStarted = true;
+            Serial.println(F("Zigbee Usermod: Initialized successfully"));
+        } else {
+            Serial.printf("Zigbee Usermod: Start failed: %s\n", esp_err_to_name(err));
+        }
     } else {
-        Serial.println(F("Zigbee Usermod: Failed to initialize"));
+        Serial.println(F("Zigbee Usermod: Failed to create device"));
     }
     
     initDone = true;
@@ -153,25 +154,41 @@ void ZigbeeUsermod::onStateChange(uint8_t mode) {
 esp_err_t ZigbeeUsermod::createZigbeeDevice() {
     // Create endpoint list
     esp_zb_ep_list_t *ep_list = esp_zb_ep_list_create();
+    if (!ep_list) {
+        Serial.println(F("Zigbee: Failed to create endpoint list"));
+        return ESP_FAIL;
+    }
     
     // Create cluster list for the endpoint
     esp_zb_cluster_list_t *cluster_list = esp_zb_zcl_cluster_list_create();
+    if (!cluster_list) {
+        Serial.println(F("Zigbee: Failed to create cluster list"));
+        return ESP_FAIL;
+    }
     
     // Basic cluster (mandatory)
     esp_zb_attribute_list_t *basic_cluster = esp_zb_basic_cluster_create(NULL);
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_basic_cluster(cluster_list, basic_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    if (basic_cluster) {
+        esp_zb_cluster_list_add_basic_cluster(cluster_list, basic_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    }
     
     // On/Off cluster
     esp_zb_attribute_list_t *on_off_cluster = esp_zb_on_off_cluster_create(NULL);
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_on_off_cluster(cluster_list, on_off_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    if (on_off_cluster) {
+        esp_zb_cluster_list_add_on_off_cluster(cluster_list, on_off_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    }
     
     // Level Control cluster
     esp_zb_attribute_list_t *level_cluster = esp_zb_level_cluster_create(NULL);
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_level_cluster(cluster_list, level_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    if (level_cluster) {
+        esp_zb_cluster_list_add_level_cluster(cluster_list, level_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    }
     
     // Color Control cluster
     esp_zb_attribute_list_t *color_cluster = esp_zb_color_control_cluster_create(NULL);
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_color_control_cluster(cluster_list, color_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    if (color_cluster) {
+        esp_zb_cluster_list_add_color_control_cluster(cluster_list, color_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    }
     
     // Create endpoint with clusters
     esp_zb_endpoint_config_t endpoint_config = {
@@ -181,8 +198,17 @@ esp_err_t ZigbeeUsermod::createZigbeeDevice() {
         .app_device_version = ZIGBEE_DEVICE_VERSION
     };
     
-    ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(ep_list, cluster_list, endpoint_config));
-    ESP_ERROR_CHECK(esp_zb_device_register(ep_list));
+    esp_err_t err = esp_zb_ep_list_add_ep(ep_list, cluster_list, endpoint_config);
+    if (err != ESP_OK) {
+        Serial.printf("Zigbee: Failed to add endpoint: %s\n", esp_err_to_name(err));
+        return err;
+    }
+    
+    err = esp_zb_device_register(ep_list);
+    if (err != ESP_OK) {
+        Serial.printf("Zigbee: Failed to register device: %s\n", esp_err_to_name(err));
+        return err;
+    }
     
     return ESP_OK;
 }
@@ -325,8 +351,42 @@ void ZigbeeUsermod::addToJsonInfo(JsonObject& root) {
     }
 }
 
-// Instantiate and register the usermod
+// Instantiate the usermod
 ZigbeeUsermod zigbeeUsermod;
 
-#endif // CONFIG_IDF_TARGET_ESP32C6
+// Register the usermod
+REGISTER_USERMOD(zigbeeUsermod);
+
+#else // Not ESP32-C6 or Zigbee not enabled
+
+// Stub implementation for non-ESP32-C6 platforms
+class ZigbeeUsermod : public Usermod {
+private:
+    static const char _name[];
+    
+public:
+    void setup() override {
+        Serial.println(F("Zigbee Usermod: Only supported on ESP32-C6 with Zigbee enabled"));
+    }
+    
+    void addToJsonInfo(JsonObject& root) override {
+        JsonObject user = root["u"];
+        if (user.isNull()) user = root.createNestedObject("u");
+        
+        JsonArray zigbeeInfo = user.createNestedArray(FPSTR(_name));
+        zigbeeInfo.add("Not supported");
+        zigbeeInfo.add("ESP32-C6 required");
+    }
+    
+    uint16_t getId() override { return USERMOD_ID_ZIGBEE; }
+};
+
+const char ZigbeeUsermod::_name[] PROGMEM = "Zigbee";
+
+ZigbeeUsermod zigbeeUsermod;
+
+// Register the usermod  
+REGISTER_USERMOD(zigbeeUsermod);
+
+#endif // CONFIG_IDF_TARGET_ESP32C6 && CONFIG_ZB_ENABLED
 #endif // ESP32
