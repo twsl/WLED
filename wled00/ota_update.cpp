@@ -417,8 +417,8 @@ bool verifyBootloaderImage(const uint8_t* &buffer, size_t &len, String* bootload
       *bootloaderErrorMsg = "Chip ID mismatch - expected ESP32-C6 (0x000D), got 0x" + String(chipId, HEX);
       return false;
     }
-    // ESP32-C6 update is now supported
-    return true;
+    *bootloaderErrorMsg = "ESP32-C6 update not supported yet";
+    return false;
   #else
     // Generic validation - chip ID should be valid
     if (chipId > 0x00FF) {
